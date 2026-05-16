@@ -1,0 +1,12 @@
+{
+  "hari": {
+    "applied_date": "2026-05-17",
+    "applied_today": 0,
+    "running": false,
+    "last_log": "Batch apply: browser closed",
+    "current_job": "",
+    "last_error": "Batch apply flow error: Message: invalid session id: session deleted as the browser has closed the connection\nfrom disconnected: not connected to DevTools\n  (Session info: chrome=146.0.7680.177); For documentation on this error, please visi",
+    "current_company": "Java Developer Info Edge 3.9 2371 Reviews 3-5 YrsNot disclosedNew Delhi Work on big data processing pipelines using Apache Spark or similar technologies. Job Requirements : . 3-5 years of experience in developing Java applications with expertise in Spring",
+    "failed_today": 5
+  }
+}
