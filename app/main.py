@@ -20,7 +20,7 @@ app = FastAPI(title="Sankalpa API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_credentials=false,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
