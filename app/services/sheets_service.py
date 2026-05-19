@@ -212,12 +212,34 @@ def register_user(
 
 def login_user(username: str, password: str) -> dict | None:
     user = get_user(username)
+
     if not user:
         return None
-    stored = str(user.get("password_encoded", ""))
-    if decode_value(stored) != password:
-        return None
-    return user
+
+    stored = str(user.get("password_encoded", "")).strip()
+
+    # support already encoded passwords
+    try:
+        decoded = decode_value(stored)
+        if decoded == password:
+            return user
+    except Exception:
+        pass
+
+    # support old plain-text passwords
+    if stored == password:
+        return user
+
+    return None
+
+# def login_user(username: str, password: str) -> dict | None:
+#     user = get_user(username)
+#     if not user:
+#         return None
+#     stored = str(user.get("password_encoded", ""))
+#     if decode_value(stored) != password:
+#         return None
+#     return user
 
 
 def user_public(user: dict) -> dict:
