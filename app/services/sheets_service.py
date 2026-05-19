@@ -50,6 +50,34 @@ def _use_local() -> bool:
     return not GOOGLE_SCRIPT_URL
 
 
+def _headers_for_sheet(sheet_name: str) -> list[str]:
+    return {
+        SHEET_USERS: USER_HEADERS,
+        SHEET_APPLICATIONS: APP_HEADERS,
+        SHEET_LOGS: LOG_HEADERS,
+        SHEET_CACHE: CACHE_HEADERS,
+    }.get(sheet_name, [])
+
+
+def _normalize_sheet_matrix(raw: Any, sheet_name: str) -> list[list]:
+    """Google Apps Script must return a 2D array; errors/empty responses become header-only."""
+    headers = _headers_for_sheet(sheet_name)
+
+    if isinstance(raw, dict):
+        return [headers] if headers else []
+
+    if not isinstance(raw, list):
+        return [headers] if headers else []
+
+    if len(raw) == 0:
+        return [headers] if headers else []
+
+    if len(raw) == 1 and not any(str(c).strip() for c in raw[0]):
+        return [headers] if headers else []
+
+    return raw
+
+
 def _fetch_sheet(sheet_name: str) -> list[list]:
     if _use_local():
         store = {
@@ -59,30 +87,23 @@ def _fetch_sheet(sheet_name: str) -> list[list]:
             SHEET_CACHE: _local_cache,
         }
         rows = store.get(sheet_name, [])
+        hdr = _headers_for_sheet(sheet_name)
         if not rows:
-            headers = {
-                SHEET_USERS: USER_HEADERS,
-                SHEET_APPLICATIONS: APP_HEADERS,
-                SHEET_LOGS: LOG_HEADERS,
-                SHEET_CACHE: CACHE_HEADERS,
-            }.get(sheet_name, [])
-            return [headers] if headers else []
-        hdr = {
-            SHEET_USERS: USER_HEADERS,
-            SHEET_APPLICATIONS: APP_HEADERS,
-            SHEET_LOGS: LOG_HEADERS,
-            SHEET_CACHE: CACHE_HEADERS,
-        }[sheet_name]
+            return [hdr] if hdr else []
         out = [hdr]
         for r in rows:
             out.append([r.get(h, "") for h in hdr])
         return out
 
     url = f"{GOOGLE_SCRIPT_URL}?sheet={sheet_name}"
-    with httpx.Client(timeout=45, follow_redirects=True) as client:
-        resp = client.get(url)
-        resp.raise_for_status()
-        return resp.json()
+    try:
+        with httpx.Client(timeout=45, follow_redirects=True) as client:
+            resp = client.get(url)
+            resp.raise_for_status()
+            return _normalize_sheet_matrix(resp.json(), sheet_name)
+    except Exception:  # noqa: BLE001
+        hdr = _headers_for_sheet(sheet_name)
+        return [hdr] if hdr else []
 
 
 def _append_row(sheet_name: str, row: list) -> None:
@@ -144,10 +165,16 @@ def _update_row(sheet_name: str, key_value: str, updates: dict[str, Any], key_co
         return data.get("status") == "updated"
 
 
-def _rows_to_dicts(data: list[list]) -> list[dict]:
-    if not data or len(data) < 2:
+def _rows_to_dicts(data: Any) -> list[dict]:
+    if isinstance(data, dict):
         return []
-    headers = [str(h).strip() for h in data[0]]
+    if not isinstance(data, list) or len(data) < 2:
+        return []
+    if not data[0]:
+        return []
+    headers = [str(h).strip() for h in data[0] if h is not None]
+    if not headers:
+        return []
     out = []
     for row in data[1:]:
         if not any(str(c).strip() for c in row):
@@ -212,34 +239,12 @@ def register_user(
 
 def login_user(username: str, password: str) -> dict | None:
     user = get_user(username)
-
     if not user:
         return None
-
-    stored = str(user.get("password_encoded", "")).strip()
-
-    # support already encoded passwords
-    try:
-        decoded = decode_value(stored)
-        if decoded == password:
-            return user
-    except Exception:
-        pass
-
-    # support old plain-text passwords
-    if stored == password:
-        return user
-
-    return None
-
-# def login_user(username: str, password: str) -> dict | None:
-#     user = get_user(username)
-#     if not user:
-#         return None
-#     stored = str(user.get("password_encoded", ""))
-#     if decode_value(stored) != password:
-#         return None
-#     return user
+    stored = str(user.get("password_encoded", ""))
+    if decode_value(stored) != password:
+        return None
+    return user
 
 
 def user_public(user: dict) -> dict:
@@ -325,8 +330,8 @@ def save_application(
 
 
 def _normalize_application(row: dict) -> dict:
-    ts = str(row.get("timestamp") or row.get("applied_at") or "")
-    role = str(row.get("role") or row.get("job_title") or "")
+    ts = str(row.get("timestamp") or row.get("applied_at") or row.get("time") or "")
+    role = str(row.get("role") or row.get("job_title") or row.get("title") or "")
     st = str(row.get("status") or "")
     if st.lower() in ("applied", "success"):
         st = "SUCCESS"
